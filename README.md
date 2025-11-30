@@ -1,1 +1,1 @@
-# fake-news
+Fake news detection using LLMs 
