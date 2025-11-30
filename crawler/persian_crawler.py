@@ -146,7 +146,7 @@ class IsnaCrawler:
             else:
                 print("   ⚠ Not an article (or too short)")
 
-            # اضافه‌کردن لینک‌های جدید به صف
+            
             for a in soup.find_all("a", href=True):
                 full = urljoin(url, a["href"])
                 full = self._normalize_url(full)
