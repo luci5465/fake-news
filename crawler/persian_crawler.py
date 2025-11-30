@@ -99,7 +99,6 @@ class IsnaCrawler:
             if self._is_same_domain(full):
                 outgoing.append(full)
 
-        # id یکتا برای هر مقاله
         if url not in self.article_ids:
             self.article_ids[url] = len(self.article_ids) + 1
 
