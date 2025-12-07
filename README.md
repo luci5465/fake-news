@@ -1,17 +1,17 @@
-( Fake news detection using LLMs )
-
-pip install -r requirements.txt
+#( Fake news detection using LLMs )
 
 1. Create the virtual environment : 
 python3 -m venv venv
 2. Activate the environment (Linux) : 
 source venv/bin/activate
 
-Run the Project :
+pip install -r requirements.txt
+
+#Run the Project :
 python main_cli.py
 
 
-Choose an Operation:
+#Choose an Operation:
 
 1-5: Run individual modules (Crawling, Cleaning, Indexing, Graph, Detection).
 
