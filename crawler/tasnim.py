@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 from collections import deque
-import logging
 import time
 import random
 import re
@@ -10,8 +9,12 @@ from tqdm import tqdm
 import json
 import os
 import sys
+import urllib3
 
-DATA_DIR = os.environ.get("PROJECT_DATA_DIR", "/home/luci/Desktop/fake_news/data")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.environ.get("PROJECT_DATA_DIR", os.path.join(BASE_DIR, "data"))
 
 def ensure_data_dir():
     if not os.path.exists(DATA_DIR):
@@ -20,18 +23,19 @@ def ensure_data_dir():
         except OSError:
             pass
 
-def safe_request(url, retries=2, timeout=6):
+def safe_request(url, retries=3, timeout=10):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
     }
     for attempt in range(retries):
         try:
-            r = requests.get(url, headers=headers, timeout=timeout)
+            r = requests.get(url, headers=headers, timeout=timeout, verify=False)
             if r.status_code == 200:
                 return r.text
         except Exception:
             pass
-        time.sleep(0.2)
+        time.sleep(0.3 + random.random())
     return None
 
 def normalize_date(raw_date):
@@ -122,26 +126,35 @@ def extract_links_generic(soup, base_url):
 
 def save_data(data, depth):
     if not data:
-        print("\nNo data collected.")
         return
     ensure_data_dir()
-    filename = f"tasnim_depth{depth}_raw.json"
+    filename = f"tasnim_depth{depth}_data.json"
     filepath = os.path.join(DATA_DIR, filename)
     
-    existing_data = []
+    current_data = []
     if os.path.exists(filepath):
         try:
-            with open(filepath, "r", encoding="utf-8") as f: existing_data = json.load(f)
-        except: pass
+            with open(filepath, "r", encoding="utf-8") as f:
+                current_data = json.load(f)
+        except:
+            current_data = []
     
-    all_data = existing_data + data
-    unique_data = {item['url']: item for item in all_data}.values()
-    final_list = list(unique_data)
+    existing_urls = {d['url'] for d in current_data}
+    new_items = [d for d in data if d['url'] not in existing_urls]
+
+    if not new_items:
+        print("No new unique items to save.")
+        return
+
+    final_data = current_data + new_items
     
     try:
-        with open(filepath, "w", encoding="utf-8") as f: json.dump(final_list, f, ensure_ascii=False, indent=2)
-        print(f"\n✅ Saved {len(final_list)} articles to {filepath}")
-    except Exception as e: print(f"Error saving: {e}")
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(final_data, f, ensure_ascii=False, indent=2)
+        print(f"\nSuccessfully saved {len(new_items)} new articles. Total: {len(final_data)}")
+        print(f"Path: {filepath}")
+    except Exception as e:
+        print(f"Error saving: {e}")
 
 def run_interactive():
     print("\n--- Tasnim Crawler (Standard) ---")
@@ -154,11 +167,11 @@ def run_interactive():
 
     start_url = "https://www.tasnimnews.com/fa/archive"
     
-    print(f"\n🚀 Starting Crawl...")
-    print(f"   Target: {start_url}")
-    print(f"   Depth: {max_depth}")
-    print(f"   Max Pages: {max_pages}")
-    print("-----------------------------------")
+    print(f"\nStarting Crawl...")
+    print(f"Target: {start_url}")
+    print(f"Depth: {max_depth}")
+    print(f"Max Pages: {max_pages}")
+    print("-" * 30)
 
     visited = set()
     queue = deque([(start_url, 0)])
@@ -174,7 +187,6 @@ def run_interactive():
             continue
             
         visited.add(url)
-        pbar.set_postfix_str(f"Fetch: {url[-20:]}...", refresh=True)
         
         html = safe_request(url)
         if not html:
@@ -206,7 +218,7 @@ def run_interactive():
         time.sleep(0.1)
 
     pbar.close()
-    print(f"\n🎉 Crawl Finished. Collected {len(results)} pages.")
+    print(f"\nCrawl Finished. Collected {len(results)} pages.")
     save_data(results, max_depth)
 
 if __name__ == "__main__":
