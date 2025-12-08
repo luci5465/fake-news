@@ -13,7 +13,7 @@ python main.py
 
 # Choose an Operation:
 
-1-6: Run individual modules (Crawling, Cleaning, Indexing, Graph, Detection).
+1-5: Run individual modules (Crawling, Cleaning, Indexing, Graph, Detection).
 
 7. Automatic Pipeline: The recommended way. It runs the entire workflow sequentially:
 
