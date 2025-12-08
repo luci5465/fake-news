@@ -6,7 +6,8 @@ from collections import defaultdict
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-DATA_DIR = os.environ.get("PROJECT_DATA_DIR", "/home/luci/Desktop/fake_news/data")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.environ.get("PROJECT_DATA_DIR", os.path.join(BASE_DIR, "data"))
 GRAPH_FILE = os.path.join(DATA_DIR, "news_graph.json")
 
 PERSIAN_STOPWORDS = [
@@ -17,12 +18,12 @@ PERSIAN_STOPWORDS = [
 class WebGraph:
     def __init__(self):
         self.nodes = set()
-        self.edges = defaultdict(list) 
+        self.edges = defaultdict(list)
         self.incoming = defaultdict(list)
-        self.doc_map = {} 
+        self.doc_map = {}
 
     def build_from_docs(self, docs, sim_threshold=0.3, max_sim_edges=5):
-        print("   Checking explicit links...")
+        print("Checking explicit links...")
         
         url_to_id = {d['url']: d['id'] for d in docs if 'url' in d}
         
@@ -32,7 +33,6 @@ class WebGraph:
             self.doc_map[src_id] = doc.get('url', '')
             
             for link in doc.get('outgoing_links', []):
-                # نرمال‌سازی لینک (حذف اسلش آخر)
                 link = link.rstrip('/')
                 if link in url_to_id:
                     dst_id = url_to_id[link]
@@ -40,7 +40,7 @@ class WebGraph:
                         self.edges[src_id].append(dst_id)
                         self.incoming[dst_id].append(src_id)
 
-        print("   Computing content similarity edges...")
+        print("Computing content similarity edges...")
         self._add_similarity_edges(docs, sim_threshold, max_sim_edges)
 
     def _add_similarity_edges(self, docs, threshold, k):
@@ -57,7 +57,6 @@ class WebGraph:
 
         count = 0
         for i in range(len(ids)):
-            # پیدا کردن K سند شبیه
             scores = sim_matrix[i]
             scores[i] = 0 
             top_indices = np.argsort(scores)[::-1][:k]
@@ -66,12 +65,12 @@ class WebGraph:
                 if scores[idx] > threshold:
                     src = ids[i]
                     dst = ids[idx]
-                    # اضافه کردن یال دوطرفه برای شباهت
+                    
                     if dst not in self.edges[src]:
                         self.edges[src].append(dst)
                         self.incoming[dst].append(src)
                         count += 1
-        print(f"   Added {count} similarity edges.")
+        print(f"Added {count} similarity edges.")
 
     def pagerank(self, damping=0.85, max_iter=100, tol=1e-6):
         N = len(self.nodes)
@@ -107,29 +106,24 @@ class WebGraph:
         for _ in range(max_iter):
             old_auth = auth.copy()
             
-            # Update Authority
             for n in self.nodes:
                 score = 0
                 for inc in self.incoming[n]:
                     score += hub[inc]
                 auth[n] = score
             
-            # Normalize Auth
             norm = math.sqrt(sum(v*v for v in auth.values()))
             for n in auth: auth[n] /= (norm + 1e-9)
 
-            # Update Hub
             for n in self.nodes:
                 score = 0
                 for out in self.edges[n]:
                     score += auth[out]
                 hub[n] = score
                 
-            # Normalize Hub
             norm = math.sqrt(sum(v*v for v in hub.values()))
             for n in hub: hub[n] /= (norm + 1e-9)
 
-            # Check convergence
             diff = sum(abs(auth[n] - old_auth[n]) for n in self.nodes)
             if diff < tol:
                 break
@@ -140,12 +134,12 @@ def run_graph_builder():
     print("\n--- Web Graph Builder ---")
     
     if not os.path.exists(DATA_DIR):
-        print("❌ Data directory not found.")
+        print("Data directory not found.")
         return
 
     clean_files = [f for f in os.listdir(DATA_DIR) if f.endswith("_clean.json")]
     if not clean_files:
-        print("⚠️ No cleaned data files found.")
+        print("No cleaned data files found.")
         return
 
     docs = []
@@ -153,15 +147,15 @@ def run_graph_builder():
         with open(os.path.join(DATA_DIR, f), "r", encoding="utf-8") as file:
             docs.extend(json.load(file))
 
-    print(f"🕸️  Building graph from {len(docs)} documents...")
+    print(f"Building graph from {len(docs)} documents...")
     
     graph = WebGraph()
     graph.build_from_docs(docs)
 
-    print("📊 Calculating PageRank...")
+    print("Calculating PageRank...")
     pr_scores = graph.pagerank()
 
-    print("📊 Calculating HITS (Hubs & Authorities)...")
+    print("Calculating HITS (Hubs & Authorities)...")
     auth_scores, hub_scores = graph.hits()
 
     output = {
@@ -176,9 +170,9 @@ def run_graph_builder():
     try:
         with open(GRAPH_FILE, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
-        print(f"✅ Graph built and saved to: {GRAPH_FILE}")
+        print(f"Graph built and saved to: {GRAPH_FILE}")
     except Exception as e:
-        print(f"❌ Failed to save graph: {e}")
+        print(f"Failed to save graph: {e}")
 
 if __name__ == "__main__":
     run_graph_builder()
