@@ -18,14 +18,11 @@ PERSIAN_STOPWORDS = {
 
 def ensure_index_dir():
     if not os.path.exists(INDEX_DIR):
-        try:
-            os.makedirs(INDEX_DIR)
-        except OSError:
-            pass
+        os.makedirs(INDEX_DIR)
 
 def normalize_text(text):
     if not text: return ""
-    text = unicodedata.normalize("NFKC", text) 
+    text = unicodedata.normalize("NFKC", text)
     text = re.sub(r'[^\w\s]', ' ', text)
     return re.sub(r'\s+', ' ', text).strip()
 
@@ -132,7 +129,7 @@ def build_index():
     ensure_index_dir()
     try:
         with open(INDEX_FILE, "w", encoding="utf-8") as f:
-            json.dump(index_data, f, ensure_ascii=False)
+            json.dump(index_data, f, ensure_ascii=False, indent=4)
         print(f"Index built successfully!")
         print(f"Saved to: {INDEX_FILE}")
         print(f"Vocab Size: {len(vocab)} terms")
