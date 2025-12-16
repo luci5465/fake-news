@@ -1,28 +1,37 @@
-# ( Fake news detection using LLMs )
+# سیستم تشخیص اخبار جعلی (Fake News Detection via RAG)
 
-1. Create the virtual environment : 
-python3 -m venv venv
-2. Activate the environment (Linux) : 
-source venv/bin/activate
+این پروژه یک سیستم هوشمند برای صحت‌سنجی اخبار است که از معماری **RAG (Retrieval-Augmented Generation)** استفاده می‌کند. سیستم ابتدا اخبار را از خبرگزاری‌های رسمی (ایسنا، تسنیم، تابناک) جمع‌آوری کرده، سپس با جستجوی معنایی اسناد مرتبط را پیدا می‌کند و در نهایت با استفاده از مدل زبانی **Qwen** (از طریق Ollama) درستی ادعا را بررسی می‌کند.
 
+## 🛠 پیش‌نیازها
+
+1. **Python 3.8+**
+2. **[Ollama](https://ollama.com):** برای اجرای مدل هوش مصنوعی به صورت لوکال.
+
+## 🚀 نصب و راه‌اندازی
+
+۱. مخزن را کلون کنید یا فایل‌ها را دانلود کنید.
+
+۲. کتابخانه‌های مورد نیاز را نصب کنید:
+```bash
 pip install -r requirements.txt
+۳. مدل زبانی را در Ollama دانلود کنید (پیشنهاد ما Qwen است):
 
-# Run the Project :
+Bash
+
+ollama pull qwen3:8b
+🖥 نحوه اجرا
+برای دسترسی به تمام بخش‌ها (خزنده، ایندکس و رابط کاربری)، فقط فایل اصلی را اجرا کنید:
+
+Bash
+
 python main.py
+راهنمای منوی مدیریت:
+Crawlers: برای جمع‌آوری داده‌های جدید از سایت‌های خبری.
 
+Parser: برای تمیز کردن داده‌های خام.
 
-# Choose an Operation:
+Indexer: برای ساخت موتور جستجوی داخلی (TF-IDF).
 
-1-5: Run individual modules (Crawling, Cleaning, Indexing, Graph, Detection).
+Start AI Engine: اجرای سرور هوش مصنوعی (حتما قبل از ورود به سایت اجرا شود).
 
-7. Automatic Pipeline: The recommended way. It runs the entire workflow sequentially:
-
-1 = Crawls data from selected sites.
-
-2 = Cleans and normalizes texts.
-
-3 = Builds the Inverted Index.
-
-4 = Builds the Web Graph & calculates PageRank.
-
-5 = Launches the Fake News Detector interface.
+Launch Web UI: باز کردن سایت برای تست و استفاده.
