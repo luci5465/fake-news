@@ -8,6 +8,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("PROJECT_DATA_DIR", os.path.join(BASE_DIR, "data"))
 INDEX_DIR = os.path.join(BASE_DIR, "index")
 INDEX_FILE = os.path.join(INDEX_DIR, "inverted_index.json")
+GRAPH_FILE = os.path.join(DATA_DIR, "news_graph.json")
 
 PERSIAN_STOPWORDS = {
     "از", "به", "در", "که", "و", "را", "این", "آن", "برای", "با", "است", "شد", "می", "ها", "های", "بر",
@@ -19,8 +20,9 @@ class SearchEngine:
     def __init__(self):
         self.is_loaded = False
         self.index_data = {}
+        self.graph_data = {}
         self.doc_details_map = {}
-        self.load_index()
+        self.load_data()
 
     def normalize_text(self, text):
         if not text: return ""
@@ -35,19 +37,14 @@ class SearchEngine:
 
     def load_raw_content(self):
         try:
-            if not os.path.exists(DATA_DIR):
-                return
-
+            if not os.path.exists(DATA_DIR): return
             for f in os.listdir(DATA_DIR):
                 if f.endswith("_clean.json"):
-                    
                     file_source = "نامشخص"
                     if "isna" in f.lower(): file_source = "خبرگزاری ایسنا"
                     elif "tabnak" in f.lower(): file_source = "تابناک"
                     elif "tasnim" in f.lower(): file_source = "خبرگزاری تسنیم"
-                    elif "fars" in f.lower(): file_source = "خبرگزاری فارس"
-                    elif "irna" in f.lower(): file_source = "خبرگزاری ایرنا"
-
+                    
                     path = os.path.join(DATA_DIR, f)
                     with open(path, "r", encoding="utf-8") as file:
                         docs = json.load(file)
@@ -59,31 +56,34 @@ class SearchEngine:
         except Exception as e:
             print(f"Warning: Could not load raw content: {e}")
 
-    def load_index(self):
-        print("Loading Inverted Index...")
+    def load_data(self):
+        print("Loading Engine Data...")
         try:
             if not os.path.exists(INDEX_FILE):
-                print(f"Index file not found at {INDEX_FILE}. Please run index_builder.py first.")
+                print(f"CRITICAL: Index file missing at {INDEX_FILE}")
                 return
-
             with open(INDEX_FILE, "r", encoding="utf-8") as f:
                 self.index_data = json.load(f)
 
+            if os.path.exists(GRAPH_FILE):
+                with open(GRAPH_FILE, "r", encoding="utf-8") as f:
+                    self.graph_data = json.load(f)
+                print(f"Graph Metrics Loaded. Nodes: {len(self.graph_data.get('nodes', []))}")
+            else:
+                print("WARNING: Graph file not found. Ranking will be text-only.")
+
             self.load_raw_content()
-            
             self.is_loaded = True
-            print(f"Engine Ready. Loaded {self.index_data['stats']['total_docs']} docs.")
+            print("Engine Ready.")
             
         except Exception as e:
             print(f"Error loading search engine: {e}")
 
     def search(self, query, top_k=3):
-        if not self.is_loaded or not query:
-            return []
+        if not self.is_loaded or not query: return []
 
         query_tokens = self.tokenize(query)
-        if not query_tokens:
-            return []
+        if not query_tokens: return []
 
         query_vec = {}
         for token in query_tokens:
@@ -91,7 +91,6 @@ class SearchEngine:
         
         query_norm = 0
         query_tfidf = {}
-        
         vocab = self.index_data.get('vocab', {})
         idf = self.index_data.get('idf', {})
 
@@ -102,33 +101,42 @@ class SearchEngine:
                 query_norm += w ** 2
         
         query_norm = math.sqrt(query_norm)
-
-        scores = {}
+        text_scores = {}
         
         for term, w_q in query_tfidf.items():
             if term in vocab:
-                postings = vocab[term]
-                for p in postings:
+                for p in vocab[term]:
                     doc_id = p['doc_id']
                     w_d = p['tfidf']
-                    scores[doc_id] = scores.get(doc_id, 0) + (w_q * w_d)
+                    text_scores[doc_id] = text_scores.get(doc_id, 0) + (w_q * w_d)
 
         doc_norms = self.index_data.get('doc_norms', {})
         final_results = []
+        
+        ALPHA = 0.7
+        BETA = 0.3
 
-        for doc_id, dot_product in scores.items():
+        pagerank_scores = self.graph_data.get('pagerank', {})
+        
+        for doc_id, dot_product in text_scores.items():
             d_norm = doc_norms.get(doc_id, 1)
-            if d_norm > 0 and query_norm > 0:
-                similarity = dot_product / (d_norm * query_norm)
-            else:
-                similarity = 0
             
-            if similarity > 0.05:
+            cosine_sim = 0
+            if d_norm > 0 and query_norm > 0:
+                cosine_sim = dot_product / (d_norm * query_norm)
+            
+            pr_score = pagerank_scores.get(doc_id, 0.0) * 50
+            
+            final_score = (ALPHA * cosine_sim) + (BETA * pr_score)
+            
+            if final_score > 0.05:
                 doc_info = self.index_data['doc_map'].get(doc_id, {}).copy()
                 details = self.doc_details_map.get(doc_id, {})
                 
                 doc_info['id'] = doc_id
-                doc_info['score'] = similarity
+                doc_info['score'] = final_score
+                doc_info['text_score'] = cosine_sim
+                doc_info['graph_score'] = pr_score
                 doc_info['content'] = details.get('content', "")
                 doc_info['source'] = details.get('source', "نامشخص")
                 
