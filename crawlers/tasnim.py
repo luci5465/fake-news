@@ -10,6 +10,8 @@ import json
 import os
 import sys
 import urllib3
+import concurrent.futures
+from threading import Lock
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -35,7 +37,6 @@ def safe_request(url, retries=3, timeout=10):
                 return r.text
         except Exception:
             pass
-        time.sleep(0.3 + random.random())
     return None
 
 def normalize_date(raw_date):
@@ -54,6 +55,14 @@ def normalize_date(raw_date):
         if time_str: final += f" {time_str}"
         return final
     return raw_date
+
+def extract_links_generic(soup, base_url):
+    links = set()
+    for a in soup.find_all("a", href=True):
+        href = urljoin(base_url, a["href"])
+        if "tasnimnews.com" in href and "/fa/" in href:
+            links.add(href)
+    return list(links)
 
 def extract_content(soup, url):
     title = ""
@@ -101,7 +110,6 @@ def extract_content(soup, url):
             if tag: date = tag.get_text(strip=True)
         if date: break
 
-    
     links = set()
     root_soup = content_soup if content_soup else soup
     for a in root_soup.find_all("a", href=True):
@@ -114,22 +122,14 @@ def extract_content(soup, url):
         "title": title,
         "content": content,
         "publish_date": normalize_date(date),
-        "source": "tasnim"
+        "source": "tasnim",
+        "outgoing_links": list(links)
     }
 
     return item, list(links)
 
-def extract_links_generic(soup, base_url):
-    links = set()
-    for a in soup.find_all("a", href=True):
-        href = urljoin(base_url, a["href"])
-        if "tasnimnews.com" in href and "/fa/" in href:
-            links.add(href)
-    return list(links)
-
 def save_data(data, depth):
-    if not data:
-        return
+    if not data: return
     ensure_data_dir()
     filename = f"tasnim_depth{depth}_data.json"
     filepath = os.path.join(DATA_DIR, filename)
@@ -145,9 +145,7 @@ def save_data(data, depth):
     existing_urls = {d['url'] for d in current_data}
     new_items = [d for d in data if d['url'] not in existing_urls]
 
-    if not new_items:
-        print("No new unique items to save.")
-        return
+    if not new_items: return
 
     final_data = current_data + new_items
     
@@ -155,75 +153,83 @@ def save_data(data, depth):
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(final_data, f, ensure_ascii=False, indent=2)
         print(f"\nSuccessfully saved {len(new_items)} new articles. Total: {len(final_data)}")
-        print(f"Path: {filepath}")
     except Exception as e:
         print(f"Error saving: {e}")
 
-def run_interactive():
-    print("\n--- Tasnim Crawler ---")
+def process_url(url, depth, visited, lock):
+    with lock:
+        if url in visited: return None, []
+        visited.add(url)
     
-    try: max_depth = int(input("Enter Crawl Depth (1-10) [Default: 2]: ") or 2)
-    except: max_depth = 2
+    html = safe_request(url)
+    if not html: return None, []
+    
+    soup = BeautifulSoup(html, "html.parser")
+    is_article = "/news/" in url or "/media/" in url
+    
+    item = None
+    found_links = []
+    
+    if is_article:
+        item, article_links = extract_content(soup, url)
+        if item:
+            item["depth"] = depth
+        found_links.extend(article_links)
+        
+    generic_links = extract_links_generic(soup, url)
+    found_links.extend(generic_links)
+    
+    return item, found_links
 
-    try: max_pages = int(input("Max Pages to Fetch [Default: 100]: ") or 100)
+def run_interactive():
+    print("\n--- Tasnim Crawler (Fast) ---")
+    try: max_depth = int(input("Enter Crawl Depth [2]: ") or 2)
+    except: max_depth = 2
+    try: max_pages = int(input("Max Pages [100]: ") or 100)
     except: max_pages = 100
+    try: workers = int(input("Threads [10]: ") or 10)
+    except: workers = 10
 
     start_url = "https://www.tasnimnews.com/fa/archive"
-    
-    print(f"\nStarting Crawl...")
-    print(f"Target: {start_url}")
-    print(f"Depth: {max_depth}")
-    print(f"Max Pages: {max_pages}")
-    print("-" * 30)
-
     visited = set()
+    visited_lock = Lock()
     queue = deque([(start_url, 0)])
     results = []
-    in_queue = set([start_url])
     
-    pbar = tqdm(total=max_pages, desc="Crawling News", unit="page")
-
-    while queue and len(results) < max_pages:
-        url, depth = queue.popleft()
-        
-        if depth > max_depth or url in visited:
-            continue
+    pbar = tqdm(total=max_pages, desc="Crawling", unit="page")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        while queue and len(results) < max_pages:
+            batch = []
+            while queue and len(batch) < workers * 2:
+                batch.append(queue.popleft())
             
-        visited.add(url)
-        
-        html = safe_request(url)
-        if not html:
-            continue
-
-        soup = BeautifulSoup(html, "html.parser")
-        
-        is_article = "/news/" in url or "/media/" in url
-        
-        found_links = []
-        
-        if is_article:
-            item, article_links = extract_content(soup, url)
-            found_links.extend(article_links)
+            if not batch: break
             
-            if item:
-                item["depth"] = depth
-                results.append(item)
-                pbar.update(1)
-
-        
-        generic_links = extract_links_generic(soup, url)
-        found_links.extend(generic_links)
-
-        if depth < max_depth:
-            for link in found_links:
-                if link not in visited and link not in in_queue:
-                    queue.append((link, depth + 1))
-                    in_queue.add(link)
-        
-        time.sleep(0.1)
+            future_to_url = {
+                executor.submit(process_url, url, depth, visited, visited_lock): (url, depth)
+                for url, depth in batch
+            }
+            
+            for future in concurrent.futures.as_completed(future_to_url):
+                if len(results) >= max_pages: break
+                url, depth = future_to_url[future]
+                
+                try:
+                    item, links = future.result()
+                    if item:
+                        results.append(item)
+                        pbar.update(1)
+                    
+                    if depth < max_depth:
+                        with visited_lock:
+                            for link in links:
+                                if link not in visited:
+                                    queue.append((link, depth + 1))
+                except:
+                    pass
 
     pbar.close()
-    print(f"\nCrawl Finished. Collected {len(results)} pages.")
     save_data(results, max_depth)
 
 if __name__ == "__main__":
