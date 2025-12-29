@@ -24,6 +24,7 @@ st.markdown("""
     .stTextInput > div > div > input {direction: rtl; text-align: right;}
     div[data-testid="stMarkdownContainer"] {direction: rtl; text-align: right;}
     .reportview-container .main .block-container{padding-top: 2rem;}
+    .stCheckbox {direction: rtl; text-align: right;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -37,6 +38,10 @@ if 'detector' not in st.session_state:
 
 query = st.text_area("خبر یا ادعای مورد نظر را وارد کنید:", height=100, placeholder="مثال: قیمت بنزین فردا ۵۰۰۰ تومان می‌شود...")
 
+col1, col2 = st.columns([1, 3])
+with col2:
+    use_llm = st.checkbox("استفاده از هوش مصنوعی (LLM) برای تحلیل عمیق", value=True, help="در صورت غیرفعال کردن، سیستم فقط بر اساس آمار و گراف نظر می‌دهد (سریع‌تر).")
+
 if st.button("بررسی حقیقت 🔍"):
     if not query:
         st.warning("لطفاً متنی وارد کنید.")
@@ -46,8 +51,16 @@ if st.button("بررسی حقیقت 🔍"):
         
         start_time = time.time()
         
-        result = st.session_state['detector'].verify(query)
+        real_connection_status = st.session_state['detector'].is_connected
         
+        if not use_llm:
+            st.session_state['detector'].is_connected = False
+        
+        try:
+            result = st.session_state['detector'].verify(query)
+        finally:
+            st.session_state['detector'].is_connected = real_connection_status
+
         end_time = time.time()
         duration = end_time - start_time
         
@@ -65,7 +78,7 @@ if st.button("بررسی حقیقت 🔍"):
             else:
                 st.warning(f"⚠️ **مشکوک / غیرقابل تایید** - اطمینان: {confidence}%")
             
-            st.markdown("### 🧠 استدلال هوش مصنوعی:")
+            st.markdown("### 🧠 استدلال سیستم:")
             st.info(reasoning)
             
             st.markdown("---")
@@ -77,8 +90,13 @@ if st.button("بررسی حقیقت 🔍"):
                 st.markdown("### 📄 مستندات یافت شده:")
                 for i, doc in enumerate(evidence_docs, 1):
                     with st.expander(f"سند {i}: {doc.get('title', 'بدون عنوان')}"):
-                        st.markdown(f"**منبع:** {doc.get('source', 'نامشخص')}")
-                        st.markdown(f"**امتیاز شباهت:** `{doc.get('score', 0):.4f}`")
+                        source = doc.get('source', 'نامشخص')
+                        score = doc.get('score', 0)
+                        
+                        tag = "⭐ منبع معتبر (High Authority)" if doc.get('graph_score', 0) > 0.001 else "منبع معمولی"
+                        
+                        st.markdown(f"**منبع:** {source} | {tag}")
+                        st.markdown(f"**امتیاز نهایی:** `{score:.4f}`")
                         st.markdown(f"**تاریخ:** {doc.get('publish_date', '-')}")
                         st.markdown(f"**خلاصه متن:** {doc.get('content', '')[:300]}...")
                         if doc.get('url'):
